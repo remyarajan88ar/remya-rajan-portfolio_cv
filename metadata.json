@@ -1,0 +1,6 @@
+{
+  "name": "Remya Rajan Portfolio",
+  "description": "Interactive single-page portfolio, system design playground, and AI career assistant for Remya Rajan, a Senior Backend & Distributed Systems Engineer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
