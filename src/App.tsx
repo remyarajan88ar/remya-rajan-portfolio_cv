@@ -188,6 +188,35 @@ export default function App() {
   const [showPrintHint, setShowPrintHint] = useState(false);
   const [imageError, setImageError] = useState(false);
 
+  // Email settings for GitHub Pages static deployments
+  const [emailService, setEmailService] = useState<'none' | 'web3forms' | 'formspree'>(() => {
+    const savedService = localStorage.getItem('remya_portfolio_email_service');
+    if (savedService === 'web3forms' || savedService === 'formspree') return savedService;
+    
+    // Check vite env
+    const envWeb3 = (import.meta as any).env?.VITE_WEB3FORMS_KEY;
+    if (envWeb3) return 'web3forms';
+    const envFormspree = (import.meta as any).env?.VITE_FORMSPREE_ENDPOINT;
+    if (envFormspree) return 'formspree';
+    
+    return 'none';
+  });
+  
+  const [emailKey, setEmailKey] = useState<string>(() => {
+    const savedKey = localStorage.getItem('remya_portfolio_email_key');
+    if (savedKey) return savedKey;
+    
+    // Check vite env
+    const envWeb3 = (import.meta as any).env?.VITE_WEB3FORMS_KEY;
+    if (envWeb3) return envWeb3;
+    const envFormspree = (import.meta as any).env?.VITE_FORMSPREE_ENDPOINT;
+    if (envFormspree) return envFormspree;
+    
+    return '';
+  });
+
+  const [showEmailConfig, setShowEmailConfig] = useState(false);
+
 
 
   // Handle sticky navbar scroll indicator
@@ -261,18 +290,70 @@ export default function App() {
 
     setFormSubmitting(true);
     try {
-      // Simulate a realistic transmission delay for high-fidelity interactive feedback
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      const mockId = 'msg_' + Math.random().toString(36).substring(2, 11);
       const categoryMap: Record<string, string> = {
         'General Inquiry': 'General Inquiry',
         'Interview Invitation': 'Interview Request',
         'Immediate Hire Contract': 'Immediate Project Proposal'
       };
-      
       const category = categoryMap[contactForm.urgency] || 'General Inquiry';
       const receivedAt = new Date().toISOString();
+      const mockId = 'msg_' + Math.random().toString(36).substring(2, 11);
+
+      let isRealTransmission = false;
+
+      if (emailService === 'web3forms' && emailKey) {
+        const response = await fetch("https://api.web3forms.com/submit", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          body: JSON.stringify({
+            access_key: emailKey,
+            subject: `💼 New Portfolio Message from ${contactForm.name}`,
+            from_name: contactForm.name,
+            name: contactForm.name,
+            email: contactForm.email,
+            company: contactForm.company || "Not Specified",
+            urgency: contactForm.urgency,
+            message: contactForm.message
+          })
+        });
+        
+        if (!response.ok) {
+          const resData = await response.json().catch(() => ({}));
+          throw new Error(resData.message || "Failed to transmit via Web3Forms API. Check your Access Key.");
+        }
+        isRealTransmission = true;
+      } else if (emailService === 'formspree' && emailKey) {
+        const endpoint = emailKey.includes('formspree.io') 
+          ? emailKey 
+          : `https://formspree.io/f/${emailKey.trim()}`;
+          
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json"
+          },
+          body: JSON.stringify({
+            name: contactForm.name,
+            email: contactForm.email,
+            company: contactForm.company || "Not Specified",
+            urgency: contactForm.urgency,
+            message: contactForm.message
+          })
+        });
+
+        if (!response.ok) {
+          const resData = await response.json().catch(() => ({}));
+          throw new Error(resData.error || "Failed to transmit via Formspree API. Check your Form ID.");
+        }
+        isRealTransmission = true;
+      } else {
+        // Simulate a realistic transmission delay for high-fidelity interactive feedback
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
 
       const mockData = {
         id: mockId,
@@ -281,7 +362,9 @@ export default function App() {
         triage: {
           category,
           urgency: contactForm.urgency === 'Immediate Hire Contract' ? 'High' : 'Medium',
-          autoReply: `Thank you, ${contactForm.name}! Your message has been saved to local browser storage.`
+          autoReply: isRealTransmission 
+            ? `Your message has been successfully emailed to Remya's personal inbox and saved to your browser cache!`
+            : `Thank you, ${contactForm.name}! Your message has been saved to local browser storage.`
         }
       };
 
@@ -298,7 +381,7 @@ export default function App() {
         message: contactForm.message,
         receivedAt,
         category,
-        status: 'Saved to Local Storage'
+        status: isRealTransmission ? 'Emailed to Remya' : 'Saved to Local Storage'
       };
       
       const updatedMessages = [newMessage, ...localMessages];
@@ -309,7 +392,7 @@ export default function App() {
       setContactForm({ name: '', email: '', company: '', urgency: 'General Inquiry', message: '' });
     } catch (err: any) {
       console.error(err);
-      alert(`Error submitting form: ${err.message || "Please try again."}`);
+      alert(`Email Transmission Failed: ${err.message || "Please check your network and settings."}`);
     } finally {
       setFormSubmitting(false);
     }
@@ -757,7 +840,114 @@ export default function App() {
             
             {/* Contact form */}
             <div className="bg-white rounded-lg border border-black/15 p-6 sm:p-8 shadow-sm space-y-4">
-              <h3 className="font-serif font-bold text-lg text-black mb-2">Leave a Message</h3>
+              <div className="flex items-center justify-between border-b border-black/5 pb-2">
+                <h3 className="font-serif font-bold text-lg text-[#1A1A1A]">Leave a Message</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowEmailConfig(!showEmailConfig)}
+                  className={`text-[10px] font-mono flex items-center space-x-1 border rounded px-2 py-1 transition-all cursor-pointer ${
+                    showEmailConfig || emailService !== 'none'
+                      ? 'bg-[#1A1A1A] border-[#1A1A1A] text-white hover:bg-black'
+                      : 'bg-white border-black/15 text-black/60 hover:text-black hover:border-black/30'
+                  }`}
+                  title="Configure live email delivery using a free static-form provider"
+                >
+                  <Settings className={`h-3 w-3 ${formSubmitting ? 'animate-spin' : ''}`} />
+                  <span>{emailService !== 'none' ? 'Live Email Active' : 'Configure Live Email'}</span>
+                </button>
+              </div>
+
+              {/* Optional Email Delivery Setup Panel */}
+              {showEmailConfig && (
+                <div className="p-4 bg-[#F9F8F6] border border-black/15 rounded space-y-3 font-sans text-[11px] text-black/80">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold uppercase tracking-wider text-[9px] text-black/50">GitHub Pages Email Delivery Setup</span>
+                    <button 
+                      type="button" 
+                      onClick={() => setShowEmailConfig(false)}
+                      className="text-black/40 hover:text-black font-semibold cursor-pointer text-xs"
+                    >
+                      ✕ Close
+                    </button>
+                  </div>
+                  <p className="leading-relaxed text-black/60">
+                    Because GitHub Pages hosts static files without a running backend server, standard API endpoints won't work out-of-the-box. You can connect a free contact-form delivery service in seconds to receive recruiters' messages directly in your inbox:
+                  </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="font-bold text-[10px] text-black/70 block">Form Service Provider</label>
+                      <select
+                        value={emailService}
+                        onChange={e => {
+                          const val = e.target.value as 'none' | 'web3forms' | 'formspree';
+                          setEmailService(val);
+                          localStorage.setItem('remya_portfolio_email_service', val);
+                        }}
+                        className="w-full bg-white border border-black/15 rounded p-2 text-xs focus:outline-none focus:border-black cursor-pointer font-mono"
+                      >
+                        <option value="none">Simulated Mode (Saves locally only)</option>
+                        <option value="web3forms">Web3Forms (Free - Recommended)</option>
+                        <option value="formspree">Formspree (Classic Endpoint)</option>
+                      </select>
+                    </div>
+
+                    {emailService !== 'none' && (
+                      <div className="space-y-1">
+                        <label className="font-bold text-[10px] text-black/70 block">
+                          {emailService === 'web3forms' ? 'Access Key (UUID)' : 'Form ID or Endpoint URL'}
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          placeholder={emailService === 'web3forms' ? 'e.g. xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx' : 'e.g. xxxxxxxx or https://formspree.io/f/...'}
+                          value={emailKey}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setEmailKey(val);
+                            localStorage.setItem('remya_portfolio_email_key', val);
+                          }}
+                          className="w-full bg-white border border-black/15 rounded p-2 text-xs focus:outline-none focus:border-black font-mono"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {emailService === 'web3forms' && (
+                    <div className="bg-white p-2.5 rounded border border-black/10 text-[10px] text-black/75 leading-relaxed space-y-1.5 font-sans">
+                      <p className="font-bold text-[#1A1A1A]">🚀 Setup Web3Forms in 1 minute:</p>
+                      <ol className="list-decimal pl-4 space-y-1">
+                        <li>Visit <a href="https://web3forms.com/" target="_blank" rel="noopener noreferrer" className="underline font-bold text-black hover:text-black/75">web3forms.com</a> (completely free).</li>
+                        <li>Enter your email to receive a free <strong>Access Key</strong> in your inbox.</li>
+                        <li>Paste that key into the field above and it will auto-save in your browser.</li>
+                      </ol>
+                      <p className="text-black/50 text-[9px] mt-1 font-mono">
+                        💡 <strong>Dev Tip:</strong> You can also bake this key directly into your build by declaring <code>VITE_WEB3FORMS_KEY</code> in your repository environment secrets.
+                      </p>
+                    </div>
+                  )}
+
+                  {emailService === 'formspree' && (
+                    <div className="bg-white p-2.5 rounded border border-black/10 text-[10px] text-black/75 leading-relaxed space-y-1.5 font-sans">
+                      <p className="font-bold text-[#1A1A1A]">🚀 Setup Formspree in 1 minute:</p>
+                      <ol className="list-decimal pl-4 space-y-1">
+                        <li>Register a free account at <a href="https://formspree.io/" target="_blank" rel="noopener noreferrer" className="underline font-bold text-black hover:text-black/75">formspree.io</a>.</li>
+                        <li>Create a new form and target your preferred contact email.</li>
+                        <li>Copy the form ID (e.g. <code>mqkvpzoe</code>) or full endpoint URL and paste it above.</li>
+                      </ol>
+                      <p className="text-black/50 text-[9px] mt-1 font-mono">
+                        💡 <strong>Dev Tip:</strong> You can also bake this endpoint directly into your build by declaring <code>VITE_FORMSPREE_ENDPOINT</code> in your repository environment secrets.
+                      </p>
+                    </div>
+                  )}
+                  
+                  {emailService === 'none' && (
+                    <p className="text-black/50 text-[10px] italic">
+                      Currently running in local browser cache mode. All submissions are processed, classified, and saved strictly within your local browser storage.
+                    </p>
+                  )}
+                </div>
+              )}
               
               <form onSubmit={handleContactSubmit} className="space-y-4 font-sans text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
